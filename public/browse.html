@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Browse Clubs — UTD Clubs</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <nav id="nav"></nav>
+  <div class="container">
+    <h1>Browse Clubs</h1>
+    <p class="subtitle">Search, filter, and apply — applications go straight to the club's admins in real time.</p>
+
+    <div id="recommended-section" style="display:none;">
+      <h2 style="margin-top:0;">Recommended for you</h2>
+      <p class="subtitle" style="margin-top:-8px;">Based on your <a href="/profile.html">interests & skills</a>.</p>
+      <div id="recommended-list"></div>
+    </div>
+
+    <h2>All Clubs</h2>
+    <div class="search-row">
+      <input type="text" id="search" placeholder="Search clubs by name, description, or tag…" />
+      <button class="secondary" id="new-club-btn">+ New Club</button>
+    </div>
+
+    <div id="new-club-card" class="card" style="display:none;">
+      <h2 style="margin-top:0">Create a club</h2>
+      <form id="new-club-form">
+        <input type="text" id="club-name" placeholder="Club name" required />
+        <textarea id="club-desc" placeholder="What does this club do?"></textarea>
+        <input type="text" id="club-tags" placeholder="Tags, comma-separated (e.g. tech, ai, social)" />
+        <input type="text" id="club-time" placeholder="Meeting time (e.g. Thursdays 6pm, ECSS 2.311)" />
+        <div class="row">
+          <button type="submit">Create</button>
+          <button type="button" class="secondary" id="cancel-new-club">Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="clubs-list"></div>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script>
+    Auth.requireLogin();
+    renderNav("browse");
+    connectRealtime((notif) => {
+      if (notif.type === "club_match") loadRecommended();
+    });
+
+    const listEl = document.getElementById("clubs-list");
+    const searchEl = document.getElementById("search");
+    let debounceTimer;
+
+    async function loadRecommended() {
+      const recs = await api("/api/clubs/recommended");
+      const section = document.getElementById("recommended-section");
+      if (recs.length === 0) {
+        section.style.display = "none";
+        return;
+      }
+      section.style.display = "block";
+      document.getElementById("recommended-list").innerHTML = recs.map(recommendedCardHtml).join("");
+      recs.forEach((c) => {
+        const btn = document.getElementById(`apply-${c.id}`);
+        if (btn) btn.onclick = () => applyToClub(c.id, c.name);
+      });
+    }
+
+    function recommendedCardHtml(c) {
+      const pct = Math.round(c.match_score * 100);
+      return `
+        <div class="card club-card fade-in" style="border-left:3px solid var(--primary);">
+          <div>
+            <div class="row" style="gap:8px;">
+              <h3 style="margin:0;">${escapeHtml(c.name)}</h3>
+              <span class="badge approved">${pct}% match</span>
+            </div>
+            <div class="meta">${escapeHtml(c.meeting_time || "Meeting time not set")}</div>
+            <div>${escapeHtml(c.description || "")}</div>
+            <div class="tags">${c.matched_tags.map((t) => `<span class="tag">✓ ${escapeHtml(t)}</span>`).join("")}</div>
+          </div>
+          <div><button class="small" id="apply-${c.id}">Apply</button></div>
+        </div>`;
+    }
+
+    async function loadClubs() {
+      const q = searchEl.value.trim();
+      const clubs = await api(`/api/clubs${q ? `?q=${encodeURIComponent(q)}` : ""}`);
+      if (clubs.length === 0) {
+        listEl.innerHTML = `<div class="empty">No clubs match your search yet.</div>`;
+        return;
+      }
+      listEl.innerHTML = clubs.map(clubCardHtml).join("");
+      clubs.forEach((c) => {
+        const btn = document.getElementById(`apply-${c.id}`);
+        if (btn) btn.onclick = () => applyToClub(c.id, c.name);
+      });
+    }
+
+    function clubCardHtml(c) {
+      const nameHtml = c.is_member
+        ? `<a href="/club.html?id=${c.id}" style="color:inherit; text-decoration:none;"><h3>${escapeHtml(c.name)} →</h3></a>`
+        : `<h3>${escapeHtml(c.name)}</h3>`;
+      const actionHtml = c.is_admin
+        ? `<span class="badge admin">Admin</span>`
+        : c.is_member
+        ? `<span class="badge approved">Member</span>`
+        : `<button class="small" id="apply-${c.id}">Apply</button>`;
+      return `
+        <div class="card club-card fade-in">
+          <div>
+            ${nameHtml}
+            <div class="meta">${escapeHtml(c.meeting_time || "Meeting time not set")}</div>
+            <div>${escapeHtml(c.description || "")}</div>
+            <div class="tags">${c.tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}</div>
+          </div>
+          <div>${actionHtml}</div>
+        </div>`;
+    }
+
+    async function applyToClub(id, name) {
+      try {
+        await api(`/api/clubs/${id}/apply`, { method: "POST", body: {} });
+        toast(`Applied to ${name} — you'll be notified when there's a decision.`);
+        loadClubs();
+      } catch (err) {
+        toast(err.message);
+      }
+    }
+
+    searchEl.addEventListener("input", () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(loadClubs, 250);
+    });
+
+    document.getElementById("new-club-btn").onclick = () => {
+      document.getElementById("new-club-card").style.display = "block";
+    };
+    document.getElementById("cancel-new-club").onclick = () => {
+      document.getElementById("new-club-card").style.display = "none";
+    };
+
+    document.getElementById("new-club-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        await api("/api/clubs", {
+          method: "POST",
+          body: {
+            name: document.getElementById("club-name").value,
+            description: document.getElementById("club-desc").value,
+            tags: document.getElementById("club-tags").value.split(",").map((t) => t.trim()).filter(Boolean),
+            meeting_time: document.getElementById("club-time").value,
+          },
+        });
+        document.getElementById("new-club-form").reset();
+        document.getElementById("new-club-card").style.display = "none";
+        toast("Club created — you're now its admin.");
+        loadClubs();
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+
+    loadClubs();
+    loadRecommended();
+  </script>
+</body>
+</html>

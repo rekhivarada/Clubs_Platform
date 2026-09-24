@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>My Applications — UTD Clubs</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <nav id="nav"></nav>
+  <div class="container">
+    <h1>My Applications</h1>
+    <p class="subtitle">Status updates arrive live the moment a club admin makes a decision.</p>
+    <div id="apps-list"></div>
+
+    <h2>My Clubs</h2>
+    <div id="clubs-list"></div>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script>
+    Auth.requireLogin();
+    renderNav("student");
+
+    async function loadApplications() {
+      const apps = await api("/api/me/applications");
+      const el = document.getElementById("apps-list");
+      if (apps.length === 0) {
+        el.innerHTML = `<div class="empty">You haven't applied to any clubs yet. <a href="/browse.html">Browse clubs →</a></div>`;
+        return;
+      }
+      el.innerHTML = apps
+        .map(
+          (a) => `
+        <div class="card club-card">
+          <div>
+            <h3>${a.club_name}</h3>
+            <div class="meta">Applied ${new Date(a.created_at).toLocaleDateString()}</div>
+          </div>
+          <span class="badge ${a.status}">${a.status}</span>
+        </div>`
+        )
+        .join("");
+    }
+
+    async function loadMyClubs() {
+      const { memberOf, adminOf } = await api("/api/me/clubs");
+      const el = document.getElementById("clubs-list");
+      const all = [
+        ...adminOf.map((c) => ({ ...c, role: "admin" })),
+        ...memberOf.filter((c) => !adminOf.find((a) => a.id === c.id)).map((c) => ({ ...c, role: "member" })),
+      ];
+      if (all.length === 0) {
+        el.innerHTML = `<div class="empty">No memberships yet.</div>`;
+        return;
+      }
+      el.innerHTML = all
+        .map(
+          (c) => `
+        <div class="card club-card fade-in">
+          <div><a href="/club.html?id=${c.id}" style="color:inherit; text-decoration:none;"><h3>${c.name} →</h3></a></div>
+          <span class="badge ${c.role === "admin" ? "admin" : "approved"}">${c.role}</span>
+        </div>`
+        )
+        .join("");
+    }
+
+    // live: refresh whenever a decision notification comes in
+    connectRealtime((notif) => {
+      if (notif.type === "application_decision") {
+        loadApplications();
+        loadMyClubs();
+      }
+    });
+
+    loadApplications();
+    loadMyClubs();
+  </script>
+</body>
+</html>

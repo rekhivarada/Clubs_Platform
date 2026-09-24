@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Club — UTD Clubs</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <nav id="nav"></nav>
+  <div class="container">
+    <div class="club-hero">
+      <div>
+        <h1 id="club-name">Loading…</h1>
+        <p class="subtitle" id="club-meta"></p>
+      </div>
+      <span class="badge admin" id="admin-badge" style="display:none;">You're admin</span>
+    </div>
+
+    <div class="tabs sticky" id="tabs">
+      <button data-tab="overview" class="active">Overview</button>
+      <button data-tab="members">Members</button>
+      <button data-tab="announcements">Announcements</button>
+      <button data-tab="chat">Chat</button>
+    </div>
+
+    <div id="tab-overview" class="tab-panel">
+      <div class="card" id="overview-card"></div>
+    </div>
+
+    <div id="tab-members" class="tab-panel" style="display:none;">
+      <div class="card">
+        <h2 style="margin-top:0">Admins</h2>
+        <div id="admins-list"></div>
+      </div>
+      <div class="card">
+        <h2 style="margin-top:0">Members</h2>
+        <div id="members-list"></div>
+      </div>
+    </div>
+
+    <div id="tab-announcements" class="tab-panel" style="display:none;">
+      <div class="card" id="new-announcement-card" style="display:none;">
+        <h2 style="margin-top:0">Post an announcement</h2>
+        <form id="announcement-form">
+          <input type="text" id="ann-title" placeholder="Title" required />
+          <textarea id="ann-body" placeholder="What's the update?" required></textarea>
+          <button type="submit" style="align-self:flex-start;">Post</button>
+        </form>
+      </div>
+      <div id="announcements-list"></div>
+    </div>
+
+    <div id="tab-chat" class="tab-panel" style="display:none;">
+      <div class="chat-window" id="chat-window"></div>
+      <form class="chat-input-row" id="chat-form">
+        <input type="text" id="chat-input" placeholder="Message the club…" autocomplete="off" required />
+        <button type="submit">Send</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script>
+    Auth.requireLogin();
+    renderNav();
+
+    const clubId = new URLSearchParams(window.location.search).get("id");
+    const me = Auth.getUser();
+    let club = null;
+
+    if (!clubId) window.location.href = "/browse.html";
+
+    // ---- tabs ----
+    document.querySelectorAll("#tabs button").forEach((btn) => {
+      btn.onclick = () => {
+        document.querySelectorAll("#tabs button").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        document.querySelectorAll(".tab-panel").forEach((p) => (p.style.display = "none"));
+        document.getElementById(`tab-${btn.dataset.tab}`).style.display = "block";
+        if (btn.dataset.tab === "chat") scrollChatToBottom();
+      };
+    });
+
+    // ---- load club + guard access ----
+    async function loadClub() {
+      try {
+        club = await api(`/api/clubs/${clubId}`);
+      } catch (err) {
+        toast("Couldn't load that club.");
+        window.location.href = "/browse.html";
+        return;
+      }
+      if (!club.is_member && !club.is_admin) {
+        document.querySelector(".container").innerHTML = `
+          <div class="empty-state">
+            <span class="big-emoji">🔒</span>
+            <h2>This club's page is members-only</h2>
+            <p>Apply from the Browse Clubs page to get access once you're approved.</p>
+            <a href="/browse.html"><button>Browse Clubs</button></a>
+          </div>`;
+        return;
+      }
+
+      document.getElementById("club-name").textContent = club.name;
+      document.getElementById("club-meta").textContent = club.meeting_time || "Meeting time not set";
+      document.getElementById("admin-badge").style.display = club.is_admin ? "inline-block" : "none";
+      document.getElementById("new-announcement-card").style.display = club.is_admin ? "block" : "none";
+
+      document.getElementById("overview-card").innerHTML = `
+        <p>${escapeHtml(club.description || "No description yet.")}</p>
+        <div class="tags">${club.tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}</div>
+      `;
+
+      loadMembers();
+      loadAnnouncements();
+      loadChat();
+    }
+
+    // ---- members ----
+    async function loadMembers() {
+      const { admins, members } = await api(`/api/clubs/${clubId}/members`);
+      document.getElementById("admins-list").innerHTML = admins.map(memberRowHtml).join("") || `<div class="empty">No admins.</div>`;
+      document.getElementById("members-list").innerHTML =
+        members.map(memberRowHtml).join("") || `<div class="empty">No other members yet.</div>`;
+    }
+    function memberRowHtml(u) {
+      return `<div class="member-row">${avatarHtml(u.name)}<div><div class="name">${escapeHtml(u.name)}${
+        u.id === me.id ? " (you)" : ""
+      }</div><div class="email">${escapeHtml(u.email)}</div></div></div>`;
+    }
+
+    // ---- announcements ----
+    async function loadAnnouncements() {
+      const list = await api(`/api/clubs/${clubId}/announcements`);
+      const el = document.getElementById("announcements-list");
+      el.innerHTML =
+        list.map(announcementHtml).join("") ||
+        `<div class="empty-state"><span class="big-emoji">📣</span>No announcements yet.</div>`;
+      list.forEach((a) => bindReplyForm(a.id));
+    }
+
+    function announcementHtml(a) {
+      return `
+        <div class="card announcement fade-in" id="ann-${a.id}">
+          <h3>${escapeHtml(a.title)}</h3>
+          <div class="meta">${escapeHtml(a.author_name)} · ${timeAgo(a.created_at)}</div>
+          <p>${escapeHtml(a.body)}</p>
+          <div class="reply-list" id="replies-${a.id}">${a.replies.map(replyHtml).join("")}</div>
+          <form class="reply-form" data-ann="${a.id}">
+            <input type="text" placeholder="Reply…" required />
+            <button type="submit" class="small secondary">Reply</button>
+          </form>
+        </div>`;
+    }
+    function replyHtml(r) {
+      return `<div class="reply fade-in">${avatarHtml(r.author_name, 26)}<div class="bubble"><span class="who">${escapeHtml(
+        r.author_name
+      )}</span>${escapeHtml(r.body)}</div></div>`;
+    }
+    function bindReplyForm(annId) {
+      const form = document.querySelector(`.reply-form[data-ann="${annId}"]`);
+      if (!form) return;
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const input = form.querySelector("input");
+        if (!input.value.trim()) return;
+        try {
+          const reply = await api(`/api/announcements/${annId}/replies`, { method: "POST", body: { body: input.value } });
+          document.getElementById(`replies-${annId}`).insertAdjacentHTML("beforeend", replyHtml(reply));
+          input.value = "";
+        } catch (err) {
+          toast(err.message);
+        }
+      });
+    }
+
+    document.getElementById("announcement-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        const ann = await api(`/api/clubs/${clubId}/announcements`, {
+          method: "POST",
+          body: { title: document.getElementById("ann-title").value, body: document.getElementById("ann-body").value },
+        });
+        document.getElementById("announcements-list").insertAdjacentHTML("afterbegin", announcementHtml(ann));
+        bindReplyForm(ann.id);
+        document.getElementById("announcement-form").reset();
+        toast("Announcement posted.");
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+
+    // ---- chat ----
+    async function loadChat() {
+      const messages = await api(`/api/clubs/${clubId}/messages`);
+      const win = document.getElementById("chat-window");
+      win.innerHTML =
+        messages.map(chatMsgHtml).join("") || `<div class="empty-state"><span class="big-emoji">💬</span>No messages yet — say hi!</div>`;
+      scrollChatToBottom();
+    }
+    function chatMsgHtml(m) {
+      const own = m.user_id === me.id;
+      return `<div class="chat-msg ${own ? "own" : ""} fade-in">${avatarHtml(m.author_name, 28)}<div><span class="who">${
+        own ? "You" : escapeHtml(m.author_name)
+      }</span><div class="bubble">${escapeHtml(m.body)}</div></div></div>`;
+    }
+    function scrollChatToBottom() {
+      const win = document.getElementById("chat-window");
+      win.scrollTop = win.scrollHeight;
+    }
+
+    document.getElementById("chat-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = document.getElementById("chat-input");
+      if (!input.value.trim()) return;
+      const body = input.value;
+      input.value = "";
+      try {
+        const msg = await api(`/api/clubs/${clubId}/messages`, { method: "POST", body: { body } });
+        document.getElementById("chat-window").insertAdjacentHTML("beforeend", chatMsgHtml(msg));
+        scrollChatToBottom();
+      } catch (err) {
+        toast(err.message);
+        input.value = body;
+      }
+    });
+
+    // ---- live updates while this page is open ----
+    connectRealtime((notif) => {
+      if (String(notif.payload?.club_id) !== String(clubId) && notif.type === "chat_message") return;
+      if (notif.type === "chat_message" && String(notif.payload.club_id) === String(clubId)) {
+        document.getElementById("chat-window").insertAdjacentHTML("beforeend", chatMsgHtml(notif.payload));
+        scrollChatToBottom();
+      }
+      if (notif.type === "new_announcement" && String(notif.payload.club_id) === String(clubId)) {
+        document.getElementById("announcements-list").insertAdjacentHTML("afterbegin", announcementHtml(notif.payload));
+        bindReplyForm(notif.payload.id);
+        toast(`New announcement: ${notif.payload.title}`);
+      }
+      if (notif.type === "new_reply") {
+        const container = document.getElementById(`replies-${notif.payload.announcement_id}`);
+        if (container) container.insertAdjacentHTML("beforeend", replyHtml(notif.payload));
+      }
+    });
+
+    loadClub();
+  </script>
+</body>
+</html>

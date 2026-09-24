@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Admin — UTD Clubs</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <nav id="nav"></nav>
+  <div class="container">
+    <h1>Admin Dashboard</h1>
+    <p class="subtitle">New applications appear here live — no refresh needed.</p>
+
+    <div id="admin-of-list"></div>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script>
+    Auth.requireLogin();
+    renderNav("admin");
+
+    async function loadAdminClubs() {
+      const { adminOf } = await api("/api/me/clubs");
+      const container = document.getElementById("admin-of-list");
+
+      if (adminOf.length === 0) {
+        container.innerHTML = `<div class="empty">You're not an admin of any club yet. <a href="/browse.html">Create one →</a></div>`;
+        return;
+      }
+
+      container.innerHTML = adminOf
+        .map(
+          (c) => `
+        <div class="card">
+          <h2 style="margin-top:0">${c.name} <a href="/club.html?id=${c.id}" style="font-size:13px; font-weight:400;">Open club page →</a></h2>
+          <div id="apps-for-${c.id}"><div class="empty">Loading applications…</div></div>
+        </div>`
+        )
+        .join("");
+
+      adminOf.forEach((c) => loadApplicationsForClub(c.id));
+    }
+
+    async function loadApplicationsForClub(clubId) {
+      const apps = await api(`/api/clubs/${clubId}/applications`);
+      const el = document.getElementById(`apps-for-${clubId}`);
+      if (apps.length === 0) {
+        el.innerHTML = `<div class="empty">No applications yet.</div>`;
+        return;
+      }
+      el.innerHTML = apps
+        .map(
+          (a) => `
+        <div class="club-card" style="padding:10px 0; border-top:1px solid var(--border);">
+          <div>
+            <strong>${a.applicant_name}</strong> <span class="meta">${a.applicant_email}</span>
+            <div class="meta">Applied ${new Date(a.created_at).toLocaleDateString()}${a.message ? ` — "${a.message}"` : ""}</div>
+          </div>
+          <div>
+            ${
+              a.status === "pending"
+                ? `<button class="small" onclick="decide(${a.id}, 'approved', ${clubId})">Approve</button>
+                   <button class="small danger" onclick="decide(${a.id}, 'rejected', ${clubId})">Reject</button>`
+                : `<span class="badge ${a.status}">${a.status}</span>`
+            }
+          </div>
+        </div>`
+        )
+        .join("");
+    }
+
+    async function decide(applicationId, decision, clubId) {
+      try {
+        await api(`/api/applications/${applicationId}/decision`, { method: "POST", body: { decision } });
+        toast(`Application ${decision}.`);
+        loadApplicationsForClub(clubId);
+      } catch (err) {
+        toast(err.message);
+      }
+    }
+
+    // live: new application comes in -> refresh that club's list
+    connectRealtime((notif) => {
+      if (notif.type === "new_application") {
+        loadApplicationsForClub(notif.payload.clubId);
+      }
+    });
+
+    loadAdminClubs();
+  </script>
+</body>
+</html>

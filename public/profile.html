@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>My Interests — UTD Clubs</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <nav id="nav"></nav>
+  <div class="container" style="max-width:560px;">
+    <h1>My Interests & Skills</h1>
+    <p class="subtitle">Used to recommend clubs that actually fit you — the more specific, the better the matches.</p>
+
+    <div class="card">
+      <form id="profile-form">
+        <label style="font-weight:600; font-size:14px;">Interests</label>
+        <input type="text" id="interests" placeholder="e.g. ai, robotics, music, hiking" />
+        <label style="font-weight:600; font-size:14px;">Skills</label>
+        <input type="text" id="skills" placeholder="e.g. python, public-speaking, design" />
+        <p style="color:var(--muted); font-size:12px; margin:-4px 0 0;">Comma-separated. These are matched against each club's tags.</p>
+        <button type="submit">Save</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script>
+    Auth.requireLogin();
+    renderNav();
+
+    async function load() {
+      const { interests, skills } = await api("/api/me/profile");
+      document.getElementById("interests").value = interests.join(", ");
+      document.getElementById("skills").value = skills.join(", ");
+    }
+
+    document.getElementById("profile-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const toList = (v) => v.split(",").map((s) => s.trim()).filter(Boolean);
+      try {
+        await api("/api/me/profile", {
+          method: "PUT",
+          body: {
+            interests: toList(document.getElementById("interests").value),
+            skills: toList(document.getElementById("skills").value),
+          },
+        });
+        toast("Saved — your recommendations will update on Browse Clubs.");
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+
+    load();
+  </script>
+</body>
+</html>

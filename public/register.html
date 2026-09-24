@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Sign up — UTD Clubs</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="container" style="max-width:420px; padding-top: 60px;">
+    <h1>Create your account</h1>
+    <p class="subtitle">Any student can apply to clubs, or create a club and become its admin.</p>
+
+    <div class="card">
+      <form id="register-form">
+        <input type="text" id="name" placeholder="Full name" required />
+        <input type="email" id="email" placeholder="Email (use your @utdallas.edu)" required />
+        <input type="password" id="password" placeholder="Password" required minlength="6" />
+        <div class="error" id="error" style="display:none"></div>
+        <button type="submit">Create account</button>
+      </form>
+    </div>
+    <p style="text-align:center; color:var(--muted); font-size:14px;">
+      Already have an account? <a href="/login.html">Log in</a>
+    </p>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script>
+    document.getElementById("register-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById("error");
+      errorEl.style.display = "none";
+      try {
+        const { token, user } = await api("/api/auth/register", {
+          method: "POST",
+          body: {
+            name: document.getElementById("name").value,
+            email: document.getElementById("email").value,
+            password: document.getElementById("password").value,
+          },
+        });
+        Auth.save(token, user);
+        window.location.href = "/browse.html";
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.style.display = "block";
+      }
+    });
+  </script>
+</body>
+</html>

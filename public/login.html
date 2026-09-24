@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Log in — UTD Clubs</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="container" style="max-width:420px; padding-top: 60px;">
+    <h1>UTD Clubs</h1>
+    <p class="subtitle">One platform for every student club — find, apply, and connect.</p>
+
+    <div class="card">
+      <h2 style="margin-top:0">Log in</h2>
+      <form id="login-form">
+        <input type="email" id="email" placeholder="Email" required />
+        <input type="password" id="password" placeholder="Password" required />
+        <div class="error" id="error" style="display:none"></div>
+        <button type="submit">Log in</button>
+      </form>
+    </div>
+    <p style="text-align:center; color:var(--muted); font-size:14px;">
+      New here? <a href="/register.html">Create an account</a>
+    </p>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script>
+    if (Auth.getToken()) window.location.href = "/browse.html";
+
+    document.getElementById("login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById("error");
+      errorEl.style.display = "none";
+      try {
+        const { token, user } = await api("/api/auth/login", {
+          method: "POST",
+          body: {
+            email: document.getElementById("email").value,
+            password: document.getElementById("password").value,
+          },
+        });
+        Auth.save(token, user);
+        window.location.href = "/browse.html";
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.style.display = "block";
+      }
+    });
+  </script>
+</body>
+</html>
