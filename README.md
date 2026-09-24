@@ -1,4 +1,4 @@
-# UTD Clubs Platform
+# Clubs Platform
 
 A full-stack platform where students discover and apply to student clubs, and
 club admins manage applications — with **live, real-time notifications** in
